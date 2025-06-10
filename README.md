@@ -1,2 +1,2 @@
 # memo.ai
-A second brain to remember you important things.
+A second brain to remember your important things.
