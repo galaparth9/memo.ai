@@ -56,6 +56,30 @@ module.exports = {
      */
     actions: {
 
+        whtsAppMessage: {
+            rest: {
+                method: 'GET',
+                path: '/webhook'
+            },
+            async handler(ctx) {
+                const queryParams = ctx.params;
+                const mode = queryParams['hub.mode'];
+                const token = queryParams['hub.verify_token'];
+                const challenge = queryParams['hub.challenge'];
+
+                const VERIFY_TOKEN = 'Hiravihar@5'
+
+                if (mode === "subscribe" && token === VERIFY_TOKEN) {
+                    console.log('TOKEN VERIFIED')
+                    ctx.meta.$responseType = 'text/plain';
+                    return generateResponse(true, '', challenge);
+                } else {
+                    console.log(ctx.params, 'Error in token')
+                    return 'Error verifying token'
+                }
+            }
+        },
+
         receiveMessage: {
             rest: {
                 method: 'POST',
