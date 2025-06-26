@@ -22,10 +22,21 @@
     "moleculer-repl": "^0.7.3"
   },
   "dependencies": {
-    "moleculer-web": "^0.10.4",
-    "nats": "^2.7.1",
+    "@langchain/community": "^0.3.47",
+    "@supabase/supabase-js": "^2.50.0",
+    "dotenv": "^16.5.0",
+    "fs": "^0.0.1-security",
     "ioredis": "^5.0.0",
-    "moleculer": "^0.14.26"
+    "jsonwebtoken": "^9.0.2",
+    "langchain": "^0.3.28",
+    "moleculer": "^0.14.26",
+    "moleculer-db": "^0.8.29",
+    "moleculer-web": "^0.10.4",
+    "mongoose": "^8.16.0",
+    "nats": "^2.7.1",
+    "nodemailer": "^7.0.3",
+    "path": "^0.12.7",
+    "pdf-parse": "^1.1.1"
   },
   "engines": {
     "node": ">= 16.x.x"
