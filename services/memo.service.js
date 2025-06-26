@@ -56,7 +56,7 @@ module.exports = {
      */
     actions: {
 
-        whtsAppMessage: {
+        whatsAppMessage: {
             rest: {
                 method: 'GET',
                 path: '/webhook'
@@ -67,7 +67,7 @@ module.exports = {
                 const token = queryParams['hub.verify_token'];
                 const challenge = queryParams['hub.challenge'];
 
-                const VERIFY_TOKEN = 'Hiravihar@5'
+                const VERIFY_TOKEN = 'HiraVihar'
 
                 if (mode === "subscribe" && token === VERIFY_TOKEN) {
                     console.log('TOKEN VERIFIED')
