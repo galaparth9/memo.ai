@@ -72,7 +72,8 @@ module.exports = {
                 if (mode === "subscribe" && token === VERIFY_TOKEN) {
                     console.log('TOKEN VERIFIED')
                     ctx.meta.$responseType = 'text/plain';
-                    return generateResponse(true, '', challenge);
+                    ctx.meta.$statusCode = 200;
+                    return challenge;
                 } else {
                     console.log(ctx.params, 'Error in token')
                     return 'Error verifying token'
