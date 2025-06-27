@@ -230,7 +230,8 @@ Only respond with JSON. Now analyze this message:
 
                 if (existing && existing.length > 0) {
                     console.log('Memory already exists or is similar — updating instead');
-                    this.updateUserMemory({ text, userId });
+                    await this.updateUserMemory({ text, userId });
+                    return;
                 }
 
                 const documents = [
