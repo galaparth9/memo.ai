@@ -230,7 +230,7 @@ Only respond with JSON. Now analyze this message:
 
                 if (existing && existing.length > 0) {
                     console.log('Memory already exists or is similar — updating instead');
-                    return this.updateUserMemory({ text, userId });
+                    this.updateUserMemory({ text, userId });
                 }
 
                 const documents = [
@@ -254,14 +254,14 @@ Only respond with JSON. Now analyze this message:
                     messages: [
                         {
                             role: 'system',
-                            content: `You are a helpful assistant. Generate a creative response to confirm that the user's memory has been saved successfully.`
+                            content: `You are a helpful assistant. Generate a creative short and precise message to confirm that the user's memory has been saved successfully.`
                         },
                         {
                             role: 'user',
                             content: text
                         }
                     ],
-                    temperature: 2
+                    temperature: 1
                 });
 
                 const answer = completion.choices[0].message.content.trim();
@@ -335,7 +335,7 @@ Only respond with JSON. Now analyze this message:
                             content: text
                         }
                     ],
-                    temperature: 2
+                    temperature: 1
                 });
 
                 const answer = completion.choices[0].message.content.trim();
@@ -441,7 +441,7 @@ ${updatedMemory}`;
                     messages: [
                         { role: 'system', content: replyPrompt }
                     ],
-                    temperature: 2
+                    temperature: 1
                 });
 
                 const replyResponse = replyRes.choices[0].message.content.trim();
