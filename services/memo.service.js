@@ -92,12 +92,12 @@ module.exports = {
                     this.brain(ctx.params)
                     ctx.meta.$statusCode = 200;
                     ctx.meta.$responseType = "application/json";
-                    return generateResponse(true, 'Webhook received successfully')
+                    return { status: "success" };
 
                 } catch (error) {
                     this.logger.error(`Error: recieveMessages > BotService : `, error);
-                    ctx.meta.$statusCode = 500;
-                    return generateResponse(false, error || 'Something went wrong, Please try again');
+                    ctx.meta.$responseType = "application/json";
+                    return { error: 'Something went wrong' };
                 }
             }
         },
@@ -118,20 +118,20 @@ module.exports = {
         async brain(response) {
             try {
                 console.log('Processing WhatsApp Webhook Response');
-                // const entry = response.entry?.[0]?.changes?.[0]?.value;
-                // if (entry.statuses?.[0]?.status) {
-                //     const status = entry.statuses[0].status;
-                //     console.log('Status of message:', status);
-                //     return; // No further processing needed for statuses
-                // }
-                // const mobileNumber = entry.contacts?.[0]?.wa_id;
-                // const message = entry.messages[0];
-                // const messageBody = message.text.body;
+                const entry = response.entry?.[0]?.changes?.[0]?.value;
+                if (entry.statuses?.[0]?.status) {
+                    const status = entry.statuses[0].status;
+                    console.log('Status of message:', status);
+                    return; // No further processing needed for statuses
+                }
+                const mobileNumber = entry.contacts?.[0]?.wa_id;
+                const message = entry.messages[0];
+                const messageBody = message.text.body;
 
-                console.log(response)
+                // console.log(response)
 
-                const mobileNumber = response.mobileNumber
-                const messageBody = response.message;
+                // const mobileNumber = response.mobileNumber
+                // const messageBody = response.message;
 
                 if (!mobileNumber) {
                     console.error('Mobile number not found in response');
@@ -249,7 +249,48 @@ Only respond with JSON. Now analyze this message:
                     }
                 );
 
-                //send response to whatsapp
+                const completion = await openai.chat.completions.create({
+                    model: 'gpt-4o-mini',
+                    messages: [
+                        {
+                            role: 'system',
+                            content: `You are a helpful assistant. Generate a creative response to confirm that the user's memory has been saved successfully.`
+                        },
+                        {
+                            role: 'user',
+                            content: text
+                        }
+                    ],
+                    temperature: 2
+                });
+
+                const answer = completion.choices[0].message.content.trim();
+
+                const data = {
+                    messaging_product: "whatsapp",
+                    recipient_type: "individual",
+                    to: userId,
+                    type: "text",
+                    text: {
+                        body: answer
+                    }
+                };
+
+                const apiUrl = `https://graph.facebook.com/v21.0/${process.env.PHONE_NUMBER_ID}/messages`
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                if (response.status !== 200) {
+                    console.log('Error connecting whats app server')
+                }
+
                 console.log('Memory saved successfully for user:', userId);
 
             } catch (error) {
@@ -265,7 +306,7 @@ Only respond with JSON. Now analyze this message:
                 const store = new SupabaseVectorStore(embeddings, {
                     client,
                     tableName: 'documents',
-                    queryName: 'semantic_search_by_user' // your Supabase function name
+                    queryName: 'semantic_search_by_user'
                 });
 
                 const results = await store.similaritySearch(text, 2, {
@@ -276,7 +317,7 @@ Only respond with JSON. Now analyze this message:
                 console.log('Semantic search results:', results);
 
                 if (!results || results.length === 0) {
-                    console.log('No relevant memories found for user:', userId);  //no memory function
+                    console.log('No relevant memories found for user:', userId);
                 }
 
                 const memoryText = results.map(doc => doc.pageContent).join('\n');
@@ -286,7 +327,7 @@ Only respond with JSON. Now analyze this message:
                     messages: [
                         {
                             role: 'system',
-                            content: `You are a helpful assistant.You can only answer based on the memory provided below. If you cannot find a direct answer, generate kind realistic response that you don't have that information."
+                            content: `You are a helpful assistant. You can only answer based on the memory provided below. If you cannot find a direct answer, generate kind realistic response that you don't have that information."
                             Memory: ${memoryText}`
                         },
                         {
@@ -298,10 +339,33 @@ Only respond with JSON. Now analyze this message:
                 });
 
                 const answer = completion.choices[0].message.content.trim();
-                console.log('Final extracted answer:', answer);
 
-                //send response to whatsapp
+                const data = {
+                    messaging_product: "whatsapp",
+                    recipient_type: "individual",
+                    to: userId,
+                    type: "text",
+                    text: {
+                        body: answer
+                    }
+                };
 
+                const apiUrl = `https://graph.facebook.com/v21.0/${process.env.PHONE_NUMBER_ID}/messages`
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                if (response.status !== 200) {
+                    console.log('Error connecting whats app server')
+                }
+
+                console.log('Answer generated for user:', userId);
 
             } catch (error) {
                 console.error('Error in retrieveUserMemory:', error);
@@ -331,17 +395,13 @@ Only respond with JSON. Now analyze this message:
                 const currentMemory = existing[0];
                 const currentText = currentMemory.content;
 
-                const prompt = `
-You're an assistant that updates user memory.
-
+                const prompt =
+                    `You're an assistant that updates user memory.
 Original memory:
 ${currentText}
-
 User instruction:
 ${text}
-
-Update the original memory accordingly and return only the final updated sentence, without quotes or explanations.
-`;
+Update the original memory accordingly and return only the final updated sentence, without quotes or explanations.`;
 
                 const res = await openai.chat.completions.create({
                     model: 'gpt-4o-mini',
@@ -369,6 +429,48 @@ Update the original memory accordingly and return only the final updated sentenc
                     console.error('Error updating memory: ' + updateError.message);
                 }
 
+                const replyPrompt =
+                    `Create a friendly response to the user confirming that their memory has been updated from original text to the updated text.
+Original text:
+${currentText}
+Updated text:
+${updatedMemory}`;
+
+                const replyRes = await openai.chat.completions.create({
+                    model: 'gpt-4o-mini',
+                    messages: [
+                        { role: 'system', content: replyPrompt }
+                    ],
+                    temperature: 2
+                });
+
+                const replyResponse = replyRes.choices[0].message.content.trim();
+
+                const data = {
+                    messaging_product: "whatsapp",
+                    recipient_type: "individual",
+                    to: userId,
+                    type: "text",
+                    text: {
+                        body: replyResponse
+                    }
+                };
+
+                const apiUrl = `https://graph.facebook.com/v21.0/${process.env.PHONE_NUMBER_ID}/messages`
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                if (response.status !== 200) {
+                    console.log('Error connecting whats app server')
+                }
+
                 console.log('Memory updated successfully for user:', userId);
 
             } catch (error) {
@@ -378,7 +480,7 @@ Update the original memory accordingly and return only the final updated sentenc
 
         async deleteUserMemory({ text, userId }) {
             try {
-                const [deleteEmbedding] = await embeddings.embedDocuments([deleteText]);
+                const [deleteEmbedding] = await embeddings.embedDocuments([text]);
                 const { data: match, error: matchError } = await client.rpc('match_user_document', {
                     user_id_input: userId,
                     query_embedding: deleteEmbedding,
@@ -392,18 +494,54 @@ Update the original memory accordingly and return only the final updated sentenc
 
                 const memoryToDelete = match[0];
 
-                // Step 3: Delete the matching document
                 const { error: deleteError } = await client
                     .from('documents')
                     .delete()
                     .eq('id', memoryToDelete.id)
-                    .eq('user_id', userId); // user-scoped
+                    .eq('user_id', userId);
 
                 if (deleteError) {
                     console.error('Failed to delete memory: ' + deleteError.message);
                 }
 
-                // Return success response
+                const deletePrompt =
+                    `Create a friendly response to the user confirming that their saved memory has been deleted.
+Memory to delete:${memoryToDelete.content}`;
+
+                const replyRes = await openai.chat.completions.create({
+                    model: 'gpt-4o-mini',
+                    messages: [
+                        { role: 'system', content: deletePrompt }
+                    ],
+                    temperature: 1
+                });
+
+                const deleteResponse = replyRes.choices[0].message.content.trim();
+
+                const data = {
+                    messaging_product: "whatsapp",
+                    recipient_type: "individual",
+                    to: userId,
+                    type: "text",
+                    text: {
+                        body: deleteResponse
+                    }
+                };
+
+                const apiUrl = `https://graph.facebook.com/v21.0/${process.env.PHONE_NUMBER_ID}/messages`
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                if (response.status !== 200) {
+                    console.log('Error connecting whats app server')
+                }
 
             } catch (error) {
                 console.error('Error in deleteUserMemory: ', error);
