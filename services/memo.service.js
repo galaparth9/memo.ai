@@ -276,7 +276,7 @@ Only respond with JSON. Now analyze this message:
                     }
                 };
 
-                const apiUrl = `https://graph.facebook.com/v21.0/${process.env.PHONE_NUMBER_ID}/messages`
+                const apiUrl = `https://graph.facebook.com/v23.0/${process.env.PHONE_NUMBER_ID}/messages`
 
                 const response = await fetch(apiUrl, {
                     method: 'POST',
@@ -288,7 +288,7 @@ Only respond with JSON. Now analyze this message:
                 });
 
                 if (response.status !== 200) {
-                    console.log('Error connecting whats app server')
+                    console.log('Error connecting whats app server', response)
                 }
 
                 console.log('Memory saved successfully for user:', userId);
@@ -350,7 +350,7 @@ Only respond with JSON. Now analyze this message:
                     }
                 };
 
-                const apiUrl = `https://graph.facebook.com/v21.0/${process.env.PHONE_NUMBER_ID}/messages`
+                const apiUrl = `https://graph.facebook.com/v23.0/${process.env.PHONE_NUMBER_ID}/messages`
 
                 const response = await fetch(apiUrl, {
                     method: 'POST',
@@ -456,7 +456,7 @@ ${updatedMemory}`;
                     }
                 };
 
-                const apiUrl = `https://graph.facebook.com/v21.0/${process.env.PHONE_NUMBER_ID}/messages`
+                const apiUrl = `https://graph.facebook.com/v23.0/${process.env.PHONE_NUMBER_ID}/messages`
 
                 const response = await fetch(apiUrl, {
                     method: 'POST',
@@ -528,7 +528,7 @@ Memory to delete:${memoryToDelete.content}`;
                     }
                 };
 
-                const apiUrl = `https://graph.facebook.com/v21.0/${process.env.PHONE_NUMBER_ID}/messages`
+                const apiUrl = `https://graph.facebook.com/v23.0/${process.env.PHONE_NUMBER_ID}/messages`
 
                 const response = await fetch(apiUrl, {
                     method: 'POST',
