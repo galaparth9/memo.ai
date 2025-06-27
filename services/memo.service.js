@@ -254,7 +254,7 @@ Only respond with JSON. Now analyze this message:
                     messages: [
                         {
                             role: 'system',
-                            content: `You are a helpful assistant. Generate a creative short and precise message to confirm that the user's memory has been saved successfully.`
+                            content: `You are a helpful assistant. Generate a creative message to confirm that the user's memory has been saved successfully.`
                         },
                         {
                             role: 'user',
