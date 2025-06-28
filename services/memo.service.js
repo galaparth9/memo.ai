@@ -148,7 +148,7 @@ module.exports = {
                         user_id: mobileNumber,
                         last_active_at: new Date().toISOString()
                     });
-                
+
                 await client.from('chat_logs').insert({
                     user_id: mobileNumber,
                     message: messageBody,
@@ -164,7 +164,7 @@ module.exports = {
                     .gte('created_at', thirtyMinsAgo)
                     .order('created_at', { ascending: true });
 
-                const pastMessages = chatHistory?.map(entry => entry.message).join('\n') || '';
+                const pastMessages = chatHistory?.map(entry => `${entry.role}: ${entry.message}`).join('\n') || '';
 
                 console.log('Past messages from the last 30 minutes:', pastMessages);
 
@@ -177,7 +177,7 @@ ${pastMessages}
 
 From latest message and referring to chat history detect the user's intent and return it in **strict JSON** like this:
 {
-  "intent": "store" | "retrieve" | "update" | "delete" | "reminder" | "capabilities" | "unknown",
+  "intent": "store" | "retrieve" | "update" | "delete" | "reminder" | "capabilities" | "unknown" | "timezone",
   "content": "..."  // what the user wants you to act on
 }
 
@@ -186,9 +186,10 @@ Intents:
 - retrieve → Look up a saved memory
 - update → Change an existing memory
 - delete → Remove a saved memory
-- reminder → Set a reminder or set timezone
+- reminder → Set a reminder
 - capabilities → User is asking what you can do
 - unknown → Not relevant or unclear
+- timezone → User is providing their timezone for reminders
 
 Examples:
 "Remember my blood group is B+" → store  
@@ -198,12 +199,12 @@ Examples:
 "Remind me to drink water at 2PM" → reminder  
 "What can you do?" → capabilities  
 "Tell me a joke" → unknown
+"Asia/Kolkata or IST" → timezone
 
-Only respond with JSON. Now analyze this message:
-`;
+Only respond with JSON. Now analyze this message:`;
 
                 const data = await openai.chat.completions.create({
-                    model: 'gpt-4o-mini',
+                    model: 'gpt-4.1-mini',
                     messages: [
                         { role: 'system', content: systemPrompt },
                         { role: 'user', content: messageBody }
@@ -218,26 +219,28 @@ Only respond with JSON. Now analyze this message:
 
                 switch (intent.intent) {
                     case 'store':
-                        this.saveUserMemory({ text: intent.content, userId: mobileNumber });
+                        this.saveUserMemory({ text: intent.content, userId: mobileNumber, pastMessages: pastMessages });
                         break;
                     case 'retrieve':
-                        this.retrieveUserMemory({ text: intent.content, userId: mobileNumber });
+                        this.retrieveUserMemory({ text: intent.content, userId: mobileNumber, pastMessages: pastMessages });
                         break;
                     case 'update':
-                        this.updateUserMemory({ text: intent.content, userId: mobileNumber });
+                        this.updateUserMemory({ text: intent.content, userId: mobileNumber, pastMessages: pastMessages });
                         break;
                     case 'delete':
-                        this.deleteUserMemory({ text: intent.content, userId: mobileNumber });
+                        this.deleteUserMemory({ text: intent.content, userId: mobileNumber, pastMessages: pastMessages });
                         break;
                     case 'reminder':
-                        this.scheduleReminder({ text: intent.content, userId: mobileNumber });
+                        this.scheduleReminder({ text: intent.content, userId: mobileNumber, pastMessages: pastMessages });
                         break;
                     case 'capabilities':
-                        this.capabilities({ text: intent.content, userId: mobileNumber });
+                        this.capabilities({ text: intent.content, userId: mobileNumber, pastMessages: pastMessages });
                         break;
                     case 'unknown':
-                        this.unknownIntent({ text: intent.content, userId: mobileNumber });
+                        this.unknownIntent({ text: intent.content, userId: mobileNumber, pastMessages: pastMessages });
                         break;
+                    case 'tiemezone':
+                        this.timezoneSet({ text: intent.content, userId: mobileNumber, pastMessages: pastMessages });
                     default:
                         console.log('Unknown intent:', intent);
                 }
@@ -254,7 +257,6 @@ Only respond with JSON. Now analyze this message:
                 const client = createClient(sbUrl, sbApiKey);
                 const embeddings = new OpenAIEmbeddings({ openAIApiKey: openAIKey });
 
-                // Step 1: Check for similar memory
                 const queryEmbedding = await embeddings.embedQuery(text);
                 const { data: existing, error: matchError } = await client.rpc('match_user_memory', {
                     user_id_input: userId,
@@ -302,7 +304,6 @@ Only respond with JSON. Now analyze this message:
                     content: msg.message
                 }));
 
-                // Step 5: Create confirmation message using history + system prompt
                 const messages = [
                     {
                         role: 'system',
@@ -318,7 +319,7 @@ Be brief, human-like, and kind.`
                 ];
 
                 const completion = await openai.chat.completions.create({
-                    model: 'gpt-4o-mini',
+                    model: 'gpt-4.1-mini',
                     messages,
                     temperature: 0.8
                 });
@@ -375,7 +376,7 @@ Be brief, human-like, and kind.`
                     queryName: 'semantic_search_by_user'
                 });
 
-                const results = await store.similaritySearch(text, 2, {
+                const results = await store.similaritySearch(text, 4, {
                     match_threshold: 0.75,
                     target_user_id: userId
                 });
@@ -419,7 +420,7 @@ Memory: ${memoryText}`
                 ];
 
                 const completion = await openai.chat.completions.create({
-                    model: 'gpt-4o-mini',
+                    model: 'gpt-4.1-mini',
                     messages,
                     temperature: 1
                 });
@@ -497,7 +498,7 @@ ${text}
 Update the original memory accordingly and return only the final updated sentence, without quotes or explanations.`;
 
                 const res = await openai.chat.completions.create({
-                    model: 'gpt-4o-mini',
+                    model: 'gpt-4.1-mini',
                     messages: [{ role: 'system', content: prompt }],
                     temperature: 0
                 });
@@ -547,7 +548,7 @@ Update the original memory accordingly and return only the final updated sentenc
                 ];
 
                 const replyRes = await openai.chat.completions.create({
-                    model: 'gpt-4o-mini',
+                    model: 'gpt-4.1-mini',
                     messages: replyPrompt,
                     temperature: 0.7
                 });
@@ -623,7 +624,7 @@ Update the original memory accordingly and return only the final updated sentenc
 Memory to delete:${memoryToDelete.content}`;
 
                 const replyRes = await openai.chat.completions.create({
-                    model: 'gpt-4o-mini',
+                    model: 'gpt-4.1-mini',
                     messages: [
                         { role: 'system', content: deletePrompt }
                     ],
@@ -667,10 +668,10 @@ Memory to delete:${memoryToDelete.content}`;
                 const client = createClient(sbUrl, sbApiKey);
 
                 const { data: profile, error: tzError } = await client
-                    .from('user_profiles')
+                    .from('user_activity')
                     .select('timezone')
                     .eq('user_id', userId)
-                    .single();
+                    .maybeSingle();
 
                 const userTimezone = profile?.timezone;
 
@@ -720,7 +721,7 @@ Respond with JSON like:
 }`;
 
                 const response = await openai.chat.completions.create({
-                    model: 'gpt-4o-mini',
+                    model: 'gpt-4.1-mini',
                     messages: [
                         { role: 'system', content: prompt }
                     ],
@@ -771,6 +772,29 @@ Respond with JSON like:
             } catch (error) {
                 console.error('Error in scheduleReminder: ', error);
 
+            }
+        },
+
+        async timezoneSet({ text, userId, pastMessages }) {
+            try {
+                const client = createClient(sbUrl, sbApiKey);
+
+                const timezone = text.trim();
+
+                await client
+                    .from('user_activity')
+                    .upsert({
+                        user_id: userId,
+                        timezone: timezone,
+                        last_active_at: new Date().toISOString()
+                    });
+                
+                
+
+                await this.scheduleReminder({ text, userId, pastMessages });
+
+            } catch (error) {
+                console.error('Error in timezoneSet:', error);
             }
         },
 
