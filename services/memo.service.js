@@ -150,7 +150,7 @@ module.exports = {
                     });
                 
                 await client.from('chat_logs').insert({
-                    user_id: userId,
+                    user_id: mobileNumber,
                     message: text,
                     role: 'user'
                 });
