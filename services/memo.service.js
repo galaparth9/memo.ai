@@ -160,6 +160,8 @@ module.exports = {
 
                 const pastMessages = chatHistory?.map(entry => entry.message).join('\n') || '';
 
+                console.log('Past messages from the last 30 minutes:', pastMessages);
+
 
                 const systemPrompt = `
 You are a helpful assistant that manages user memories and reminders.
@@ -167,7 +169,7 @@ You are a helpful assistant that manages user memories and reminders.
 The following is the chat history from the past 30 minutes:
 ${pastMessages}
 
-Detect the user's intent and return it in **strict JSON** like this:
+From latest message and referring to chat history detect the user's intent and return it in **strict JSON** like this:
 {
   "intent": "store" | "retrieve" | "update" | "delete" | "reminder" | "capabilities" | "unknown",
   "content": "..."  // what the user wants you to act on
@@ -510,7 +512,7 @@ Update the original memory accordingly and return only the final updated sentenc
                 if (updateError) {
                     console.error('Error updating memory: ' + updateError.message);
                 }
-                
+
                 const now = new Date();
                 const thirtyMinAgo = new Date(now.getTime() - 30 * 60 * 1000);
 
@@ -843,6 +845,7 @@ Respond with JSON like:
             cron.schedule('*/10 * * * *', async () => {
                 try {
                     console.log('Running chat history cleanup');
+                    const client = createClient(sbUrl, sbApiKey);
                     const threshold = new Date(Date.now() - 30 * 60 * 1000).toISOString();
 
                     const { data: inactiveUsers, error } = await client
