@@ -148,6 +148,12 @@ module.exports = {
                         user_id: mobileNumber,
                         last_active_at: new Date().toISOString()
                     });
+                
+                await client.from('chat_logs').insert({
+                    user_id: userId,
+                    message: text,
+                    role: 'user'
+                });
 
                 const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
 
