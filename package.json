@@ -29,11 +29,13 @@
     "ioredis": "^5.0.0",
     "jsonwebtoken": "^9.0.2",
     "langchain": "^0.3.28",
+    "luxon": "^3.6.1",
     "moleculer": "^0.14.26",
     "moleculer-db": "^0.8.29",
     "moleculer-web": "^0.10.4",
     "mongoose": "^8.16.0",
     "nats": "^2.7.1",
+    "node-cron": "^4.1.1",
     "nodemailer": "^7.0.3",
     "path": "^0.12.7",
     "pdf-parse": "^1.1.1"

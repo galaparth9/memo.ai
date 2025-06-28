@@ -12,6 +12,8 @@ const { SupabaseVectorStore } = require('@langchain/community/vectorstores/supab
 const { createClient } = require('@supabase/supabase-js');
 const OpenAI = require('openai')
 const { Document } = require('@langchain/core/documents');
+const cron = require('node-cron');
+const { DateTime } = require('luxon');
 
 const openAIKey = process.env.OPENAI_API_KEY
 const sbUrl = process.env.SB_PROJECT_URL;
@@ -220,6 +222,7 @@ Only respond with JSON. Now analyze this message:
                 const client = createClient(sbUrl, sbApiKey);
                 const embeddings = new OpenAIEmbeddings({ openAIApiKey: openAIKey });
 
+                // Step 1: Check for similar memory
                 const queryEmbedding = await embeddings.embedQuery(text);
                 const { data: existing, error: matchError } = await client.rpc('match_user_memory', {
                     user_id_input: userId,
@@ -234,6 +237,7 @@ Only respond with JSON. Now analyze this message:
                     return;
                 }
 
+                // Step 2: Save new memory
                 const documents = [
                     new Document({
                         pageContent: text,
@@ -241,32 +245,65 @@ Only respond with JSON. Now analyze this message:
                     })
                 ];
 
-                await SupabaseVectorStore.fromDocuments(
-                    documents,
-                    embeddings,
+                await SupabaseVectorStore.fromDocuments(documents, embeddings, {
+                    client,
+                    tableName: 'documents',
+                });
+
+                // Step 3: Save user message to chat_logs
+                await client.from('chat_logs').insert({
+                    user_id: userId,
+                    message: text,
+                    role: 'user'
+                });
+
+                // Step 4: Fetch last 30 mins of conversation
+                const now = new Date();
+                const thirtyMinsAgo = new Date(now.getTime() - 30 * 60 * 1000);
+
+                const { data: chatHistory, error: chatError } = await client
+                    .from('chat_logs')
+                    .select('message, role')
+                    .eq('user_id', userId)
+                    .gte('created_at', thirtyMinsAgo.toISOString())
+                    .order('created_at', { ascending: true });
+
+                const historyMessages = (chatHistory || []).map(msg => ({
+                    role: msg.role,
+                    content: msg.message
+                }));
+
+                // Step 5: Create confirmation message using history + system prompt
+                const messages = [
                     {
-                        client,
-                        tableName: 'documents',
+                        role: 'system',
+                        content: `You are a friendly assistant helping a user save a memory. 
+Include a short message confirming that their memory has been saved. 
+Be brief, human-like, and kind.`
+                    },
+                    ...historyMessages,
+                    {
+                        role: 'user',
+                        content: text
                     }
-                );
+                ];
 
                 const completion = await openai.chat.completions.create({
                     model: 'gpt-4o-mini',
-                    messages: [
-                        {
-                            role: 'system',
-                            content: `You are a helpful assistant. Generate a message to confirm that the user's memory has been saved successfully.`
-                        },
-                        {
-                            role: 'user',
-                            content: text
-                        }
-                    ],
-                    temperature: 1
+                    messages,
+                    temperature: 0.8
                 });
 
                 const answer = completion.choices[0].message.content.trim();
 
+                // Step 6: Save assistant reply
+                await client.from('chat_logs').insert({
+                    user_id: userId,
+                    message: answer,
+                    role: 'assistant'
+                });
+
+                // Step 7: Respond to WhatsApp
                 const data = {
                     messaging_product: "whatsapp",
                     recipient_type: "individual",
@@ -277,7 +314,7 @@ Only respond with JSON. Now analyze this message:
                     }
                 };
 
-                const apiUrl = `https://graph.facebook.com/v23.0/${process.env.PHONE_NUMBER_ID}/messages`
+                const apiUrl = `https://graph.facebook.com/v17.0/${process.env.PHONE_NUMBER_ID}/messages`;
 
                 const response = await fetch(apiUrl, {
                     method: 'POST',
@@ -289,15 +326,16 @@ Only respond with JSON. Now analyze this message:
                 });
 
                 if (response.status !== 200) {
-                    console.log('Error connecting whats app server', response)
+                    console.log('Error sending WhatsApp message:', response.status, await response.text());
                 }
 
-                console.log('Memory saved successfully for user:', userId);
+                console.log('Memory saved and reply sent for user:', userId);
 
             } catch (error) {
-                console.error('Error in sendResponse:', error);
+                console.error('Error in saveUserMemory:', error);
             }
-        },
+        }
+        ,
 
         async retrieveUserMemory({ text, userId }) {
             try {
@@ -321,21 +359,41 @@ Only respond with JSON. Now analyze this message:
                     console.log('No relevant memories found for user:', userId);
                 }
 
+                const now = new Date();
+                const thirtyMinsAgo = new Date(now.getTime() - 30 * 60 * 1000);
+
+                const { data: chatHistory, error: chatError } = await client
+                    .from('chat_logs')
+                    .select('message, role, created_at')
+                    .eq('user_id', userId)
+                    .gte('created_at', thirtyMinsAgo.toISOString())
+                    .order('created_at', { ascending: true });
+
+                const historyMessages = (chatHistory || []).map(m => ({
+                    role: m.role,
+                    content: m.message
+                }));
+
+
                 const memoryText = results.map(doc => doc.pageContent).join('\n');
+
+                const messages = [
+                    {
+                        role: 'system',
+                        content: `You are a helpful assistant. You can only answer based on the memory provided below. 
+If you cannot find a direct answer, generate a friendly and realistic response that you don't have that information.
+Memory: ${memoryText}`
+                    },
+                    ...historyMessages,
+                    {
+                        role: 'user',
+                        content: text
+                    }
+                ];
 
                 const completion = await openai.chat.completions.create({
                     model: 'gpt-4o-mini',
-                    messages: [
-                        {
-                            role: 'system',
-                            content: `You are a helpful assistant. You can only answer based on the memory provided below. If you cannot find a direct answer, generate kind realistic response that you don't have that information."
-                            Memory: ${memoryText}`
-                        },
-                        {
-                            role: 'user',
-                            content: text
-                        }
-                    ],
+                    messages,
                     temperature: 1
                 });
 
@@ -366,6 +424,18 @@ Only respond with JSON. Now analyze this message:
                     console.log('Error connecting whats app server')
                 }
 
+                await client.from('chat_logs').insert({
+                    user_id: userId,
+                    message: text,
+                    role: 'user'
+                });
+
+                await client.from('chat_logs').insert({
+                    user_id: userId,
+                    message: answer,
+                    role: 'assistant'
+                });
+
                 console.log('Answer generated for user:', userId);
 
             } catch (error) {
@@ -376,11 +446,15 @@ Only respond with JSON. Now analyze this message:
 
         async updateUserMemory({ text, userId }) {
             try {
-                const embeddings = new OpenAIEmbeddings({ openAIApiKey: openAIKey });
-                console.log('Processing Update Message to Supabase', text);
-                const [newEmbedding] = await embeddings.embedDocuments([text]);
                 const client = createClient(sbUrl, sbApiKey);
+                const embeddings = new OpenAIEmbeddings({ openAIApiKey: openAIKey });
 
+                console.log('Processing Update Message to Supabase', text);
+
+                // Step 1: Create embedding for the user's update instruction
+                const [newEmbedding] = await embeddings.embedDocuments([text]);
+
+                // Step 2: Find matching memory
                 const { data: existing, error: matchError } = await client.rpc('match_user_memory', {
                     user_id_input: userId,
                     query_embedding: newEmbedding,
@@ -388,16 +462,16 @@ Only respond with JSON. Now analyze this message:
                     similarity_threshold: 0.75
                 });
 
-
                 if (matchError || !existing || existing.length === 0) {
                     console.error('No matching memory found to update.');
+                    return;
                 }
 
                 const currentMemory = existing[0];
                 const currentText = currentMemory.content;
 
-                const prompt =
-                    `You're an assistant that updates user memory.
+                // Step 3: AI to generate updated memory text
+                const prompt = `You're an assistant that updates user memory.
 Original memory:
 ${currentText}
 User instruction:
@@ -406,14 +480,11 @@ Update the original memory accordingly and return only the final updated sentenc
 
                 const res = await openai.chat.completions.create({
                     model: 'gpt-4o-mini',
-                    messages: [
-                        { role: 'system', content: prompt }
-                    ],
+                    messages: [{ role: 'system', content: prompt }],
                     temperature: 0
                 });
 
                 const updatedMemory = res.choices[0].message.content.trim();
-
                 const updatedEmbedding = await embeddings.embedQuery(updatedMemory);
 
                 const { error: updateError } = await client
@@ -430,22 +501,51 @@ Update the original memory accordingly and return only the final updated sentenc
                     console.error('Error updating memory: ' + updateError.message);
                 }
 
-                const replyPrompt =
-                    `Create a friendly response to the user confirming that their memory has been updated from original text to the updated text.
-Original text:
-${currentText}
-Updated text:
-${updatedMemory}`;
+                await client.from('chat_logs').insert({
+                    user_id: userId,
+                    message: text,
+                    role: 'user'
+                });
+                const now = new Date();
+                const thirtyMinAgo = new Date(now.getTime() - 30 * 60 * 1000);
+
+                const { data: chatHistory, error: chatError } = await client
+                    .from('chat_logs')
+                    .select('message, role')
+                    .eq('user_id', userId)
+                    .gte('created_at', thirtyMinAgo.toISOString())
+                    .order('created_at', { ascending: true });
+
+                const historyMessages = (chatHistory || []).map(msg => ({
+                    role: msg.role,
+                    content: msg.message
+                }));
+
+                const replyPrompt = [
+                    {
+                        role: 'system',
+                        content: `You're an assistant confirming to the user that you've updated their memory. Be friendly and conversational.`
+                    },
+                    ...historyMessages,
+                    {
+                        role: 'user',
+                        content: `My previous memory was: "${currentText}"\nPlease update it to: "${updatedMemory}"`
+                    }
+                ];
 
                 const replyRes = await openai.chat.completions.create({
                     model: 'gpt-4o-mini',
-                    messages: [
-                        { role: 'system', content: replyPrompt }
-                    ],
-                    temperature: 1
+                    messages: replyPrompt,
+                    temperature: 0.7
                 });
 
                 const replyResponse = replyRes.choices[0].message.content.trim();
+
+                await client.from('chat_logs').insert({
+                    user_id: userId,
+                    message: replyResponse,
+                    role: 'assistant'
+                });
 
                 const data = {
                     messaging_product: "whatsapp",
@@ -457,7 +557,7 @@ ${updatedMemory}`;
                     }
                 };
 
-                const apiUrl = `https://graph.facebook.com/v23.0/${process.env.PHONE_NUMBER_ID}/messages`
+                const apiUrl = `https://graph.facebook.com/v23.0/${process.env.PHONE_NUMBER_ID}/messages`;
 
                 const response = await fetch(apiUrl, {
                     method: 'POST',
@@ -469,7 +569,7 @@ ${updatedMemory}`;
                 });
 
                 if (response.status !== 200) {
-                    console.log('Error connecting whats app server')
+                    console.log('Error connecting WhatsApp server:', await response.text());
                 }
 
                 console.log('Memory updated successfully for user:', userId);
@@ -547,7 +647,193 @@ Memory to delete:${memoryToDelete.content}`;
             } catch (error) {
                 console.error('Error in deleteUserMemory: ', error);
             }
-        }
+        },
+
+        async scheduleReminder({ text, userId }) {
+            try {
+                const client = createClient(sbUrl, sbApiKey);
+
+                const { data: profile, error: tzError } = await client
+                    .from('user_profiles')
+                    .select('timezone')
+                    .eq('user_id', userId)
+                    .single();
+
+                const userTimezone = profile?.timezone;
+
+                if (tzError) {
+                    console.error('Error fetching user profile:', tzError);
+                }
+
+                if (!userTimezone) {
+                    const data = {
+                        messaging_product: "whatsapp",
+                        recipient_type: "individual",
+                        to: userId,
+                        type: "text",
+                        text: {
+                            body: 'Before I can schedule this reminder, please tell me your timezone (e.g., Asia/Kolkata, America/New_York).'
+                        }
+                    };
+
+                    const apiUrl = `https://graph.facebook.com/v23.0/${process.env.PHONE_NUMBER_ID}/messages`
+
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(data)
+                    });
+
+                    if (response.status !== 200) {
+                        console.log('Error connecting whats app server')
+                    }
+                    return;
+                }
+
+                const now = DateTime.now().setZone(userTimezone);
+                const nowString = now.toISO();
+
+                const prompt = `
+You are a smart assistant. Today's date and time is ${nowString}. 
+From this sentence: "${text}", extract a clean reminder message and ISO 8601 datetime in the user's timezone.
+
+Respond with JSON like:
+{
+  "message": "Call mom",
+  "datetime": "2025-06-27T18:00:00"
+}`;
+
+                const response = await openai.chat.completions.create({
+                    model: 'gpt-4o-mini',
+                    messages: [
+                        { role: 'system', content: prompt }
+                    ],
+                    temperature: 0
+                });
+
+                const parsed = JSON.parse(response.choices[0].message.content.trim());
+                const { message, datetime } = parsed;
+
+                const utcDatetime = DateTime.fromISO(datetime, { zone: userTimezone }).toUTC().toISO();
+
+                const { error } = await client.from('reminders').insert({
+                    user_id: userId,
+                    content: message,
+                    remind_at: utcDatetime
+                });
+
+                if (error) {
+                    console.error('Error inserting reminder:', error.message);
+                    return;
+                }
+
+                const data = {
+                    messaging_product: "whatsapp",
+                    recipient_type: "individual",
+                    to: userId,
+                    type: "text",
+                    text: {
+                        body: `Reminder set for ${message} at ${datetime}).`
+                    }
+                };
+
+                const apiUrl = `https://graph.facebook.com/v23.0/${process.env.PHONE_NUMBER_ID}/messages`
+
+                const res = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                if (res.status !== 200) {
+                    console.log('Error connecting whats app server')
+                }
+
+            } catch (error) {
+                console.error('Error in scheduleReminder: ', error);
+
+            }
+        },
+
+        async sendMessageToUser(userId, message) {
+            try {
+                const apiUrl = `https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`;
+
+                const payload = {
+                    messaging_product: 'whatsapp',
+                    recipient_type: 'individual',
+                    to: userId,
+                    type: 'text',
+                    text: {
+                        body: message
+                    }
+                };
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    console.error('WhatsApp API error:', result);
+                } else {
+                    console.log('Message sent to', userId);
+                }
+
+            } catch (error) {
+                console.error('Error in sendMessageToUser:', error.message);
+            }
+        },
+
+        async startCronJob() {
+            try {
+                cron.schedule('* * * * *', async () => {
+                    console.log("Running cron job to send reminders.");
+                    try {
+                        const client = createClient(sbUrl, sbApiKey);
+                        const now = new Date().toISOString();
+
+                        const { data: dueReminders, error } = await client
+                            .from('reminders')
+                            .select('*')
+                            .eq('sent', false)
+                            .lte('remind_at', now);
+
+                        if (error) throw error;
+
+                        for (const reminder of dueReminders) {
+                            console.log(`Sending reminder to ${reminder.user_id}`);
+                            await sendMessageToUser(reminder.user_id, reminder.content);
+
+                            await client
+                                .from('reminders')
+                                .update({ sent: true })
+                                .eq('id', reminder.id);
+                        }
+                    } catch (err) {
+                        console.error('Error checking reminders:', err.message);
+                    }
+                });
+                console.log("Cron job scheduled to run every minute for reminders.");
+
+            } catch (error) {
+                console.error("Failed to start cron job:", error.message);
+                throw new Error("Failed to start subscription cron job.");
+            }
+        },
+
     },
 
     /**
@@ -561,7 +847,7 @@ Memory to delete:${memoryToDelete.content}`;
      * Service started lifecycle event handler
      */
     async started() {
-
+        await this.startCronJob();
     },
 
     /**
