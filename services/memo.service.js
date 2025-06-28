@@ -186,7 +186,7 @@ Intents:
 - retrieve → Look up a saved memory
 - update → Change an existing memory
 - delete → Remove a saved memory
-- reminder → Set a reminder
+- reminder → Set a reminder or set timezone
 - capabilities → User is asking what you can do
 - unknown → Not relevant or unclear
 
