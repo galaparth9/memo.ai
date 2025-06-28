@@ -161,8 +161,8 @@ module.exports = {
                     .from('chat_logs')
                     .select('message')
                     .eq('user_id', mobileNumber)
-                    .gte('timestamp', thirtyMinsAgo)
-                    .order('timestamp', { ascending: true });
+                    .gte('created_at', thirtyMinsAgo)
+                    .order('created_at', { ascending: true });
 
                 const pastMessages = chatHistory?.map(entry => entry.message).join('\n') || '';
 
