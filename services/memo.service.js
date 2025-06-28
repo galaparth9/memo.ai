@@ -140,8 +140,32 @@ module.exports = {
                     return;
                 }
 
+                const client = createClient(sbUrl, sbApiKey);
+
+                await client
+                    .from('user_activity')
+                    .upsert({
+                        user_id: mobileNumber,
+                        last_active_at: new Date().toISOString()
+                    });
+
+                const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+
+                const { data: chatHistory } = await client
+                    .from('chat_logs')
+                    .select('message')
+                    .eq('user_id', mobileNumber)
+                    .gte('timestamp', thirtyMinsAgo)
+                    .order('timestamp', { ascending: true });
+
+                const pastMessages = chatHistory?.map(entry => entry.message).join('\n') || '';
+
+
                 const systemPrompt = `
 You are a helpful assistant that manages user memories and reminders.
+
+The following is the chat history from the past 30 minutes:
+${pastMessages}
 
 Detect the user's intent and return it in **strict JSON** like this:
 {
@@ -237,7 +261,6 @@ Only respond with JSON. Now analyze this message:
                     return;
                 }
 
-                // Step 2: Save new memory
                 const documents = [
                     new Document({
                         pageContent: text,
@@ -250,14 +273,12 @@ Only respond with JSON. Now analyze this message:
                     tableName: 'documents',
                 });
 
-                // Step 3: Save user message to chat_logs
-                await client.from('chat_logs').insert({
-                    user_id: userId,
-                    message: text,
-                    role: 'user'
-                });
+                // await client.from('chat_logs').insert({
+                //     user_id: userId,
+                //     message: text,
+                //     role: 'user'
+                // });
 
-                // Step 4: Fetch last 30 mins of conversation
                 const now = new Date();
                 const thirtyMinsAgo = new Date(now.getTime() - 30 * 60 * 1000);
 
@@ -296,14 +317,12 @@ Be brief, human-like, and kind.`
 
                 const answer = completion.choices[0].message.content.trim();
 
-                // Step 6: Save assistant reply
                 await client.from('chat_logs').insert({
                     user_id: userId,
                     message: answer,
                     role: 'assistant'
                 });
 
-                // Step 7: Respond to WhatsApp
                 const data = {
                     messaging_product: "whatsapp",
                     recipient_type: "individual",
@@ -426,12 +445,6 @@ Memory: ${memoryText}`
 
                 await client.from('chat_logs').insert({
                     user_id: userId,
-                    message: text,
-                    role: 'user'
-                });
-
-                await client.from('chat_logs').insert({
-                    user_id: userId,
                     message: answer,
                     role: 'assistant'
                 });
@@ -451,10 +464,8 @@ Memory: ${memoryText}`
 
                 console.log('Processing Update Message to Supabase', text);
 
-                // Step 1: Create embedding for the user's update instruction
                 const [newEmbedding] = await embeddings.embedDocuments([text]);
 
-                // Step 2: Find matching memory
                 const { data: existing, error: matchError } = await client.rpc('match_user_memory', {
                     user_id_input: userId,
                     query_embedding: newEmbedding,
@@ -470,7 +481,6 @@ Memory: ${memoryText}`
                 const currentMemory = existing[0];
                 const currentText = currentMemory.content;
 
-                // Step 3: AI to generate updated memory text
                 const prompt = `You're an assistant that updates user memory.
 Original memory:
 ${currentText}
@@ -500,12 +510,7 @@ Update the original memory accordingly and return only the final updated sentenc
                 if (updateError) {
                     console.error('Error updating memory: ' + updateError.message);
                 }
-
-                await client.from('chat_logs').insert({
-                    user_id: userId,
-                    message: text,
-                    role: 'user'
-                });
+                
                 const now = new Date();
                 const thirtyMinAgo = new Date(now.getTime() - 30 * 60 * 1000);
 
@@ -797,7 +802,7 @@ Respond with JSON like:
             }
         },
 
-        async startCronJob() {
+        async startReminderCronJob() {
             try {
                 cron.schedule('* * * * *', async () => {
                     console.log("Running cron job to send reminders.");
@@ -834,6 +839,34 @@ Respond with JSON like:
             }
         },
 
+        async startCleanupCronJob() {
+            cron.schedule('*/10 * * * *', async () => {
+                try {
+                    console.log('Running chat history cleanup');
+                    const threshold = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+
+                    const { data: inactiveUsers, error } = await client
+                        .from('user_activity')
+                        .select('user_id')
+                        .lte('last_active_at', threshold);
+
+                    if (error) throw error;
+
+                    for (const user of inactiveUsers) {
+                        const userId = user.user_id;
+
+                        console.log(`Clearing chat history for inactive user: ${userId}`);
+
+                        await client
+                            .from('chat_logs')
+                            .delete()
+                            .eq('user_id', userId);
+                    }
+                } catch (err) {
+                    console.error('Cleanup error:', err.message);
+                }
+            });
+        },
     },
 
     /**
@@ -847,7 +880,8 @@ Respond with JSON like:
      * Service started lifecycle event handler
      */
     async started() {
-        await this.startCronJob();
+        await this.startReminderCronJob();
+        await this.startCleanupCronJob();
     },
 
     /**
