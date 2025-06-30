@@ -154,7 +154,7 @@ module.exports = {
                     if (responseId.startsWith("tz_")) {
                         const timezone = responseId.replace("tz_", "").replace(/_/g, "/");
                         console.log("User selected timezone:", timezone);
-                        await timezoneSet({ userId: mobileNumber, timezone: timezone });
+                        await this.timezoneSet({ userId: mobileNumber, timezone: timezone });
                         return
                     }
                     return
