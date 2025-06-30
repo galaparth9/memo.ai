@@ -134,7 +134,7 @@ module.exports = {
                 const { data: profile, error: tzError } = await client
                     .from('user_activity')
                     .select('timezone, user_name')
-                    .eq('user_id', userId)
+                    .eq('user_id', mobileNumber)
                     .maybeSingle();
 
                 const userTimezone = profile?.timezone;
@@ -145,12 +145,12 @@ module.exports = {
                 }
 
                 // if (!userName || userName.trim() === '') {
-                //     await this.askUserName({ userId });
+                //     await this.askUserName({ mobileNumber });
                 //     return;
                 // }
 
                 if (!userTimezone) {
-                    await this.askTimezone({ userId });
+                    await this.askTimezone({ mobileNumber });
                     return;
                 }
 
