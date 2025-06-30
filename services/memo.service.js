@@ -750,7 +750,7 @@ Respond with JSON like:
                     to: userId,
                     type: "text",
                     text: {
-                        body: `Reminder set for ${message} at ${datetime}).`
+                        body: `Reminder set for ${message}.`
                     }
                 };
 
