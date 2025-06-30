@@ -292,8 +292,8 @@ Only respond with JSON. Now analyze this message:`;
                 const { data: existing, error: matchError } = await client.rpc('match_user_memory', {
                     user_id_input: userId,
                     query_embedding: queryEmbedding,
-                    match_count: 1,
-                    similarity_threshold: 0.9
+                    match_count: 2,
+                    similarity_threshold: 0.95
                 });
 
                 if (existing && existing.length > 0) {
