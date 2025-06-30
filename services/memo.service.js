@@ -926,8 +926,6 @@ Respond with JSON like:
                         { onConflict: 'user_id' }
                     );
 
-                console.log('Error setting timezone:', error);
-
                 const apiUrl = `https://graph.facebook.com/v23.0/${process.env.PHONE_NUMBER_ID}/messages`;
 
                 const payload = {
@@ -983,7 +981,7 @@ Respond with JSON like:
 
                         for (const reminder of dueReminders) {
                             console.log(`Sending reminder to ${reminder.user_id}`);
-                            await sendReminder(reminder.user_id, reminder.content);
+                            await this.sendReminder(reminder.user_id, reminder.content);
 
                             await client
                                 .from('reminders')
