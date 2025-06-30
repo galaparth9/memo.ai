@@ -293,7 +293,7 @@ Only respond with JSON. Now analyze this message:`;
                     user_id_input: userId,
                     query_embedding: queryEmbedding,
                     match_count: 1,
-                    similarity_threshold: 0.8
+                    similarity_threshold: 0.9
                 });
 
                 if (existing && existing.length > 0) {
