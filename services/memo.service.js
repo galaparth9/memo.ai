@@ -130,6 +130,43 @@ module.exports = {
                 const message = entry.messages[0];
                 const messageBody = message.text.body;
 
+                const { data: profile, error: tzError } = await client
+                    .from('user_activity')
+                    .select('timezone, user_name')
+                    .eq('user_id', userId)
+                    .maybeSingle();
+
+                const userTimezone = profile?.timezone;
+                const userName = profile?.user_name;
+
+                if (tzError) {
+                    console.error('Error fetching user profile:', tzError);
+                }
+
+                // if (!userName || userName.trim() === '') {
+                //     await this.askUserName({ userId });
+                //     return;
+                // }
+
+                if (!userTimezone) {
+                    await this.askTimezone({ userId });
+                    return;
+                }
+
+                if (entry.messages?.[0]?.interactive?.list_reply) {
+                    const message = entry.messages[0];
+                    const responseId = message.interactive.list_reply.id;
+                    const responseTitle = message.interactive.list_reply.title;
+
+                    if (responseId.startsWith("tz_")) {
+                        const timezone = responseId.replace("tz_", "").replace(/_/g, "/");
+                        console.log("User selected timezone:", timezone);
+
+                        await timezoneSet(mobileNumber, timezone);
+                    }
+
+                }
+
                 // console.log(response)
 
                 // const mobileNumber = response.mobileNumber
@@ -159,7 +196,7 @@ module.exports = {
 
                 const { data: chatHistory } = await client
                     .from('chat_logs')
-                    .select('message')
+                    .select('message, role')
                     .eq('user_id', mobileNumber)
                     .gte('created_at', thirtyMinsAgo)
                     .order('created_at', { ascending: true });
@@ -189,7 +226,6 @@ Intents:
 - reminder → Set a reminder
 - capabilities → User is asking what you can do
 - unknown → Not relevant or unclear
-- timezone → User is providing their timezone for reminders
 
 Examples:
 "Remember my blood group is B+" → store  
@@ -197,7 +233,7 @@ Examples:
 "Update my phone number to 98765" → update  
 "Forget my old address" → delete  
 "Remind me to drink water at 2PM" → reminder  
-"What can you do?" → capabilities  
+"Hi or What can you do?" → capabilities  
 "Tell me a joke" → unknown
 "Asia/Kolkata or IST" → timezone
 
@@ -239,8 +275,6 @@ Only respond with JSON. Now analyze this message:`;
                     case 'unknown':
                         this.unknownIntent({ text: intent.content, userId: mobileNumber, pastMessages: pastMessages });
                         break;
-                    case 'tiemezone':
-                        this.timezoneSet({ text: intent.content, userId: mobileNumber, pastMessages: pastMessages });
                     default:
                         console.log('Unknown intent:', intent);
                 }
@@ -679,40 +713,12 @@ Memory to delete:${memoryToDelete.content}`;
                     console.error('Error fetching user profile:', tzError);
                 }
 
-                if (!userTimezone) {
-                    const data = {
-                        messaging_product: "whatsapp",
-                        recipient_type: "individual",
-                        to: userId,
-                        type: "text",
-                        text: {
-                            body: 'Before I can schedule this reminder, please tell me your timezone (e.g., Asia/Kolkata, America/New_York).'
-                        }
-                    };
-
-                    const apiUrl = `https://graph.facebook.com/v23.0/${process.env.PHONE_NUMBER_ID}/messages`
-
-                    const response = await fetch(apiUrl, {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify(data)
-                    });
-
-                    if (response.status !== 200) {
-                        console.log('Error connecting whats app server')
-                    }
-                    return;
-                }
-
                 const now = DateTime.now().setZone(userTimezone);
                 const nowString = now.toISO();
 
                 const prompt = `
 You are a smart assistant. Today's date and time is ${nowString}. 
-From this sentence: "${text}", extract a clean reminder message and ISO 8601 datetime in the user's timezone.
+From this sentence: "${text}", extract a clean reminder message and ISO 8601 datetime in the user's timezone: "${userTimezone}".
 
 Respond with JSON like:
 {
@@ -775,32 +781,9 @@ Respond with JSON like:
             }
         },
 
-        async timezoneSet({ text, userId, pastMessages }) {
+        async sendReminder(userId, message) {
             try {
-                const client = createClient(sbUrl, sbApiKey);
-
-                const timezone = text.trim();
-
-                await client
-                    .from('user_activity')
-                    .upsert({
-                        user_id: userId,
-                        timezone: timezone,
-                        last_active_at: new Date().toISOString()
-                    });
-                
-                
-
-                await this.scheduleReminder({ text, userId, pastMessages });
-
-            } catch (error) {
-                console.error('Error in timezoneSet:', error);
-            }
-        },
-
-        async sendMessageToUser(userId, message) {
-            try {
-                const apiUrl = `https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`;
+                const apiUrl = `https://graph.facebook.com/v23.0/${process.env.PHONE_NUMBER_ID}/messages`;
 
                 const payload = {
                     messaging_product: 'whatsapp',
@@ -834,6 +817,166 @@ Respond with JSON like:
             }
         },
 
+        async capabilities({ userId }) {
+            try {
+                const apiUrl = `https://graph.facebook.com/v23.0/${process.env.PHONE_NUMBER_ID}/messages`;
+
+                const payload = {
+                    messaging_product: 'whatsapp',
+                    recipient_type: 'individual',
+                    to: userId,
+                    type: 'text',
+                    text: {
+                        body: 'Here are some things I can do for you:\n' +
+                            '- Store memories for you\n' +
+                            '- Retrieve saved memories\n' +
+                            '- Update existing memories\n' +
+                            '- Delete memories you no longer need\n' +
+                            '- Set reminders for important tasks\n' +
+                            'Just type what you need, and I will assist you!'
+                    }
+                };
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    console.error('WhatsApp API error:', result);
+                }
+            } catch (error) {
+                console.error('Error in capabilities:', error);
+
+            }
+        },
+
+        async askTimezone({ userId }) {
+            try {
+                const data = {
+                    messaging_product: "whatsapp",
+                    recipient_type: "individual",
+                    to: mobileNumber,
+                    type: "interactive",
+                    interactive: {
+                        type: "list",
+                        header: {
+                            type: "text",
+                            text: "🌍 Select Your Timezone"
+                        },
+                        body: {
+                            text: "Please select your current timezone from the list below."
+                        },
+                        footer: {
+                            text: "This helps us schedule reminders accurately."
+                        },
+                        action: {
+                            button: "Choose Timezone",
+                            sections: [
+                                {
+                                    title: "Timezone?",
+                                    rows: [
+                                        { id: "tz_asia_kolkata", title: "Asia/Kolkata (India)" },
+                                        { id: "tz_asia_dubai", title: "Asia/Dubai (UAE)" },
+                                        { id: "tz_asia_shanghai", title: "Asia/Shanghai (China)" },
+                                        { id: "tz_america_new_york", title: "America/New_York (USA)" },
+                                        { id: "tz_asia_tokyo", title: "Asia/Tokyo (Japan)" },
+                                        { id: "tz_europe_london", title: "Europe/London (UK)" },
+                                        { id: "tz_asia_jakarta", title: "Asia/Jakarta (Indonesia)" },
+                                        { id: "tz_america_sao_paulo", title: "America/Sao_Paulo (Brazil)" },
+                                        { id: "tz_europe_berlin", title: "Europe/Berlin (Germany)" },
+                                        { id: "tz_africa_lagos", title: "Africa/Lagos (Nigeria)" },
+                                        { id: "tz_europe_moscow", title: "Europe/Moscow (Russia)" },
+                                        { id: "tz_asia_seoul", title: "Asia/Seoul (South Korea)" },
+                                        { id: "tz_australia_sydney", title: "Australia/Sydney" },
+                                        { id: "tz_asia_bangkok", title: "Asia/Bangkok (Thailand)" },
+                                        { id: "tz_asia_manila", title: "Asia/Manila (Philippines)" },
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                };
+                const apiUrl = `https://graph.facebook.com/v23.0/${process.env.PHONE_NUMBER_ID}/messages`;
+
+                const res = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                if (res.status !== 200) {
+                    console.log('Error connecting whats app server')
+                }
+                console.log('Timezone selection message sent to user:', userId);
+
+            } catch (error) {
+                console.error('Error in askTimezone:', error);
+            }
+        },
+
+        async timezoneSet(userId, timezone) {
+            try {
+                const client = createClient(sbUrl, sbApiKey);
+
+                const { error } = await client
+                    .from('user_activity')
+                    .upsert(
+                        {
+                            user_id: userId,
+                            timezone: timezone,
+                            updated_at: new Date().toISOString()
+                        },
+                        { onConflict: 'user_id' }
+                    );
+
+                const apiUrl = `https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`;
+
+                const payload = {
+                    messaging_product: 'whatsapp',
+                    recipient_type: 'individual',
+                    to: userId,
+                    type: 'text',
+                    text: {
+                        body: `Your timezone has been set to ${timezone}. Now let's get started with your reminders!`
+                    }
+                };
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    console.error('WhatsApp API error:', result);
+                }
+
+                console.log('Timezone set for user:', userId, 'to', timezone);
+
+                if (error) {
+                    console.error('Error saving timezone:', error.message);
+                }
+            } catch (error) {
+                console.error('Error in timezoneSet:', error);
+            }
+        },
+
+
         async startReminderCronJob() {
             try {
                 cron.schedule('* * * * *', async () => {
@@ -852,7 +995,7 @@ Respond with JSON like:
 
                         for (const reminder of dueReminders) {
                             console.log(`Sending reminder to ${reminder.user_id}`);
-                            await sendMessageToUser(reminder.user_id, reminder.content);
+                            await sendReminder(reminder.user_id, reminder.content);
 
                             await client
                                 .from('reminders')
