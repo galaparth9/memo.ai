@@ -879,19 +879,14 @@ Respond with JSON like:
                                     rows: [
                                         { id: "tz_asia_kolkata", title: "Asia/Kolkata (India)" },
                                         { id: "tz_asia_dubai", title: "Asia/Dubai (UAE)" },
-                                        { id: "tz_asia_shanghai", title: "Asia/Shanghai (China)" },
                                         { id: "tz_america_new_york", title: "America/New_York (USA)" },
                                         { id: "tz_asia_tokyo", title: "Asia/Tokyo (Japan)" },
                                         { id: "tz_europe_london", title: "Europe/London (UK)" },
                                         { id: "tz_asia_jakarta", title: "Asia/Jakarta (Indonesia)" },
-                                        { id: "tz_america_sao_paulo", title: "America/Sao_Paulo (Brazil)" },
                                         { id: "tz_europe_berlin", title: "Europe/Berlin (Germany)" },
-                                        { id: "tz_africa_lagos", title: "Africa/Lagos (Nigeria)" },
                                         { id: "tz_europe_moscow", title: "Europe/Moscow (Russia)" },
-                                        { id: "tz_asia_seoul", title: "Asia/Seoul (South Korea)" },
                                         { id: "tz_australia_sydney", title: "Australia/Sydney" },
                                         { id: "tz_asia_bangkok", title: "Asia/Bangkok (Thailand)" },
-                                        { id: "tz_asia_manila", title: "Asia/Manila (Philippines)" },
                                     ]
                                 }
                             ]
