@@ -147,23 +147,22 @@ module.exports = {
                 //     return;
                 // }
 
-                if (!userTimezone) {
-                    await this.askTimezone({ userId: mobileNumber });
-                    return;
-                }
-
                 if (entry.messages?.[0]?.interactive?.list_reply) {
                     const message = entry.messages[0];
                     const responseId = message.interactive.list_reply.id;
                     const responseTitle = message.interactive.list_reply.title;
-
                     if (responseId.startsWith("tz_")) {
                         const timezone = responseId.replace("tz_", "").replace(/_/g, "/");
                         console.log("User selected timezone:", timezone);
-
                         await timezoneSet({ userId: mobileNumber, timezone: timezone });
+                        return
                     }
+                    return
+                }
 
+                if (!userTimezone) {
+                    await this.askTimezone({ userId: mobileNumber });
+                    return;
                 }
 
                 const message = entry.messages[0];
