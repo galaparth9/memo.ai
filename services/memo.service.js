@@ -904,12 +904,9 @@ Respond with JSON like:
                     body: JSON.stringify(data)
                 });
 
-                console.log(res)
-
                 if (res.status !== 200) {
                     console.log('Error connecting whats app server')
                 }
-                console.log('Timezone selection message sent to user:', userId);
 
             } catch (error) {
                 console.error('Error in askTimezone:', error);
@@ -918,16 +915,19 @@ Respond with JSON like:
 
         async timezoneSet({ userId, timezone }) {
             try {
+                console.log('Setting timezone for user:', userId, 'to', timezone);
                 const { error } = await client
                     .from('user_activity')
                     .upsert(
                         {
                             user_id: userId,
                             timezone: timezone,
-                            updated_at: new Date().toISOString()
+                            last_active_at: new Date().toISOString()
                         },
                         { onConflict: 'user_id' }
                     );
+
+                console.log('Error setting timezone:', error);
 
                 const apiUrl = `https://graph.facebook.com/v23.0/${process.env.PHONE_NUMBER_ID}/messages`;
 
