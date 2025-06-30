@@ -856,7 +856,7 @@ Respond with JSON like:
                 const data = {
                     messaging_product: "whatsapp",
                     recipient_type: "individual",
-                    to: mobileNumber,
+                    to: userId,
                     type: "interactive",
                     interactive: {
                         type: "list",
@@ -932,7 +932,7 @@ Respond with JSON like:
                         { onConflict: 'user_id' }
                     );
 
-                const apiUrl = `https://graph.facebook.com/v18.0/${process.env.PHONE_NUMBER_ID}/messages`;
+                const apiUrl = `https://graph.facebook.com/v23.0/${process.env.PHONE_NUMBER_ID}/messages`;
 
                 const payload = {
                     messaging_product: 'whatsapp',
