@@ -128,8 +128,6 @@ module.exports = {
                     return; // No further processing needed for statuses
                 }
                 const mobileNumber = entry.contacts?.[0]?.wa_id;
-                const message = entry.messages[0];
-                const messageBody = message.text.body;
 
                 const { data: profile, error: tzError } = await client
                     .from('user_activity')
@@ -167,6 +165,9 @@ module.exports = {
                     }
 
                 }
+
+                const message = entry.messages[0];
+                const messageBody = message.text.body;
 
                 // console.log(response)
 
