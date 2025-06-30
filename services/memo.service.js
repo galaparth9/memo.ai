@@ -150,7 +150,7 @@ module.exports = {
                 // }
 
                 if (!userTimezone) {
-                    await this.askTimezone({ mobileNumber });
+                    await this.askTimezone({ userId: mobileNumber });
                     return;
                 }
 
@@ -871,10 +871,10 @@ Respond with JSON like:
                             text: "This helps us schedule reminders accurately."
                         },
                         action: {
-                            button: "Choose Timezone",
+                            button: "Choose your timezone",
                             sections: [
                                 {
-                                    title: "Timezone?",
+                                    title: "Timezone",
                                     rows: [
                                         { id: "tz_asia_kolkata", title: "Asia/Kolkata (India)" },
                                         { id: "tz_asia_dubai", title: "Asia/Dubai (UAE)" },
@@ -907,6 +907,8 @@ Respond with JSON like:
                     },
                     body: JSON.stringify(data)
                 });
+
+                console.log(res)
 
                 if (res.status !== 200) {
                     console.log('Error connecting whats app server')
