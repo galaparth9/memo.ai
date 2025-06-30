@@ -853,6 +853,7 @@ Respond with JSON like:
 
         async askTimezone({ userId }) {
             try {
+                console.log(userId, 'Asking user for timezone selection');
                 const data = {
                     messaging_product: "whatsapp",
                     recipient_type: "individual",
