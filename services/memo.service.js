@@ -161,7 +161,7 @@ module.exports = {
                         const timezone = responseId.replace("tz_", "").replace(/_/g, "/");
                         console.log("User selected timezone:", timezone);
 
-                        await timezoneSet(mobileNumber, timezone);
+                        await timezoneSet({ userId: mobileNumber, timezone: timezone });
                     }
 
                 }
@@ -854,7 +854,6 @@ Respond with JSON like:
 
         async askTimezone({ userId }) {
             try {
-                console.log(userId, 'Asking user for timezone selection');
                 const data = {
                     messaging_product: "whatsapp",
                     recipient_type: "individual",
@@ -917,9 +916,8 @@ Respond with JSON like:
             }
         },
 
-        async timezoneSet(userId, timezone) {
+        async timezoneSet({ userId, timezone }) {
             try {
-
                 const { error } = await client
                     .from('user_activity')
                     .upsert(
