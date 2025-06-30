@@ -20,6 +20,7 @@ const sbUrl = process.env.SB_PROJECT_URL;
 const sbApiKey = process.env.SB_API_KEY;
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+const client = createClient(sbUrl, sbApiKey);
 
 
 //GCP
@@ -177,8 +178,6 @@ module.exports = {
                     return;
                 }
 
-                const client = createClient(sbUrl, sbApiKey);
-
                 await client
                     .from('user_activity')
                     .upsert({
@@ -287,8 +286,6 @@ Only respond with JSON. Now analyze this message:`;
         async saveUserMemory({ text, userId }) {
             try {
                 console.log('Processing Save Message to Supabase', text);
-
-                const client = createClient(sbUrl, sbApiKey);
                 const embeddings = new OpenAIEmbeddings({ openAIApiKey: openAIKey });
 
                 const queryEmbedding = await embeddings.embedQuery(text);
@@ -401,7 +398,6 @@ Be brief, human-like, and kind.`
 
         async retrieveUserMemory({ text, userId }) {
             try {
-                const client = createClient(sbUrl, sbApiKey);
                 const embeddings = new OpenAIEmbeddings({ openAIApiKey: openAIKey });
 
                 const store = new SupabaseVectorStore(embeddings, {
@@ -502,7 +498,6 @@ Memory: ${memoryText}`
 
         async updateUserMemory({ text, userId }) {
             try {
-                const client = createClient(sbUrl, sbApiKey);
                 const embeddings = new OpenAIEmbeddings({ openAIApiKey: openAIKey });
 
                 console.log('Processing Update Message to Supabase', text);
@@ -699,7 +694,6 @@ Memory to delete:${memoryToDelete.content}`;
 
         async scheduleReminder({ text, userId }) {
             try {
-                const client = createClient(sbUrl, sbApiKey);
 
                 const { data: profile, error: tzError } = await client
                     .from('user_activity')
@@ -926,7 +920,6 @@ Respond with JSON like:
 
         async timezoneSet(userId, timezone) {
             try {
-                const client = createClient(sbUrl, sbApiKey);
 
                 const { error } = await client
                     .from('user_activity')
@@ -982,7 +975,6 @@ Respond with JSON like:
                 cron.schedule('* * * * *', async () => {
                     console.log("Running cron job to send reminders.");
                     try {
-                        const client = createClient(sbUrl, sbApiKey);
                         const now = new Date().toISOString();
 
                         const { data: dueReminders, error } = await client
@@ -1018,7 +1010,6 @@ Respond with JSON like:
             cron.schedule('*/10 * * * *', async () => {
                 try {
                     console.log('Running chat history cleanup');
-                    const client = createClient(sbUrl, sbApiKey);
                     const threshold = new Date(Date.now() - 30 * 60 * 1000).toISOString();
 
                     const { data: inactiveUsers, error } = await client
