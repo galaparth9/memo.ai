@@ -266,7 +266,7 @@ Only respond with JSON. Now analyze this message:`;
                         this.deleteUserMemory({ text: intent.content, userId: mobileNumber, pastMessages: pastMessages });
                         break;
                     case 'reminder':
-                        this.reminderBrain({ text: intent.content, userId: mobileNumber, pastMessages: pastMessages });
+                        this.scheduleReminderBrain({ text: intent.content, userId: mobileNumber, pastMessages: pastMessages });
                         break;
                     case 'capabilities':
                         this.capabilities({ text: intent.content, userId: mobileNumber, pastMessages: pastMessages });
