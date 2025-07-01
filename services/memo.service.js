@@ -754,6 +754,8 @@ Only respond with valid JSON. Do not include any explanation or extra text.
 
                 const parsed = JSON.parse(replyRes.choices[0].message.content.trim());
 
+                console.log('Parsed reminder data:', parsed);
+
                 const { message, recurrence_type, datetime, weekdays, day_of_month, month, time } = parsed;
                 const timezone = userTimezone
 
@@ -761,15 +763,16 @@ Only respond with valid JSON. Do not include any explanation or extra text.
                 if (recurrence_type === 'once') {
                     const utcDatetime = DateTime.fromISO(datetime, { zone: timezone }).toUTC().toISO();
 
-                    await client.from('reminders').insert({
+                    const { data: reminders, error: tzError } = await client.from('reminders').insert({
                         userId,
                         message,
                         recurrence_type,
                         remind_at: utcDatetime,
                         timezone
                     });
+                    console.error('Error inserting reminder:', tzError.message);
                 } else {
-                    await client.from('reminders').insert({
+                    const { data: reminders, error: tzError } = await client.from('reminders').insert({
                         user_id: userId,
                         content: message,
                         recurrence_type: recurrence_type,
@@ -779,6 +782,8 @@ Only respond with valid JSON. Do not include any explanation or extra text.
                         time: time,
                         timezone: timezone
                     });
+                    console.error('Error inserting reminder:', tzError.message);
+
                 }
 
                 const data = {
@@ -787,7 +792,7 @@ Only respond with valid JSON. Do not include any explanation or extra text.
                     to: userId,
                     type: "text",
                     text: {
-                        body: `Reminder set for ${message}).`
+                        body: `Reminder set for ${message}.`
                     }
                 };
 
