@@ -765,7 +765,7 @@ Only respond with valid JSON. Do not include any explanation or extra text.
 
                     const { data: reminders, error: tzError } = await client.from('reminders').insert({
                         userId,
-                        message,
+                        content: message,
                         recurrence_type,
                         remind_at: utcDatetime,
                         timezone
