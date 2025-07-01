@@ -266,7 +266,7 @@ Only respond with JSON. Now analyze this message:`;
                         this.deleteUserMemory({ text: intent.content, userId: mobileNumber, pastMessages: pastMessages });
                         break;
                     case 'reminder':
-                        this.scheduleReminder({ text: intent.content, userId: mobileNumber, pastMessages: pastMessages });
+                        this.reminderBrain({ text: intent.content, userId: mobileNumber, pastMessages: pastMessages });
                         break;
                     case 'capabilities':
                         this.capabilities({ text: intent.content, userId: mobileNumber, pastMessages: pastMessages });
@@ -692,6 +692,127 @@ Memory to delete:${memoryToDelete.content}`;
             }
         },
 
+        async scheduleReminderBrain({ text, userId }) {
+            try {
+                const { data: profile, error: tzError } = await client
+                    .from('user_activity')
+                    .select('timezone')
+                    .eq('user_id', userId)
+                    .maybeSingle();
+
+                const userTimezone = profile?.timezone;
+                const nowString = DateTime.now().setZone(userTimezone).toISO();
+
+                if (tzError) {
+                    console.error('Error fetching user profile:', tzError);
+                }
+
+                const deletePrompt = `
+You are a helpful assistant that extracts structured reminder data.
+Today's date and time is: ${nowString} (Timezone: ${userTimezone})
+From this sentence:
+"${text}"
+Extract and return a JSON object describing the reminder. It should match **one** of the following formats:
+1. For one-time reminders:
+{
+  "message": "Call doctor",
+  "recurrence_type": "once",
+  "datetime": "2025-07-05T10:00:00"
+}
+2. For weekly reminders:
+{
+  "message": "Team sync",
+  "recurrence_type": "weekly",
+  "weekdays": ["Monday", "Friday"],
+  "time": "18:00"
+}
+3. For monthly reminders:
+{
+  "message": "Pay rent",
+  "recurrence_type": "monthly",
+  "day_of_month": 1,
+  "time": "10:00"
+}
+4. For yearly reminders:
+{
+  "message": "Wish mom happy birthday",
+  "recurrence_type": "yearly",
+  "day_of_month": 10,
+  "month": 5,
+  "time": "13:00"
+}
+Only respond with valid JSON. Do not include any explanation or extra text.
+`;
+
+                const replyRes = await openai.chat.completions.create({
+                    model: 'gpt-4.1-mini',
+                    messages: [
+                        { role: 'system', content: deletePrompt }
+                    ],
+                    temperature: 1
+                });
+
+                const parsed = JSON.parse(replyRes.choices[0].message.content.trim());
+
+                const { message, recurrence_type, datetime, weekdays, day_of_month, month, time } = parsed;
+                const timezone = userTimezone
+
+
+                if (recurrence_type === 'once') {
+                    const utcDatetime = DateTime.fromISO(datetime, { zone: timezone }).toUTC().toISO();
+
+                    await client.from('reminders').insert({
+                        userId,
+                        message,
+                        recurrence_type,
+                        remind_at: utcDatetime,
+                        timezone
+                    });
+                } else {
+                    await client.from('reminders').insert({
+                        user_id: userId,
+                        content: message,
+                        recurrence_type: recurrence_type,
+                        weekdays: weekdays,
+                        day_of_month: day_of_month,
+                        month: month,
+                        time: time,
+                        timezone: timezone
+                    });
+                }
+
+                const data = {
+                    messaging_product: "whatsapp",
+                    recipient_type: "individual",
+                    to: userId,
+                    type: "text",
+                    text: {
+                        body: `Reminder set for ${message}).`
+                    }
+                };
+
+                const apiUrl = `https://graph.facebook.com/v23.0/${process.env.PHONE_NUMBER_ID}/messages`
+
+                const res = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                if (res.status !== 200) {
+                    console.log('Error connecting whats app server')
+                }
+
+
+            } catch (error) {
+                console.error('Error in reminderBrain: ', error);
+
+            }
+        },
+
         async scheduleReminder({ text, userId }) {
             try {
 
@@ -851,6 +972,39 @@ Respond with JSON like:
             }
         },
 
+        async unknownIntent({ userId }) {
+            try {
+                const apiUrl = `https://graph.facebook.com/v23.0/${process.env.PHONE_NUMBER_ID}/messages`;
+
+                const payload = {
+                    messaging_product: 'whatsapp',
+                    recipient_type: 'individual',
+                    to: userId,
+                    type: 'text',
+                    text: {
+                        body: 'I am not sure how to help with that. Can you be more specific? I can assist with storing, retrieving, updating, or deleting memories, setting reminders, and answering questions about my capabilities.'
+                    }
+                };
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    console.error('WhatsApp API error:', result);
+                }
+            } catch (error) {
+                console.error('Error in capabilities:', error);
+            }
+        },
+
         async askTimezone({ userId }) {
             try {
                 const data = {
@@ -969,25 +1123,78 @@ Respond with JSON like:
                 cron.schedule('* * * * *', async () => {
                     console.log("Running cron job to send reminders.");
                     try {
-                        const now = new Date().toISOString();
+                        const nowUtc = new Date().toISOString();
 
-                        const { data: dueReminders, error } = await client
+                        const { data: activeReminders, error } = await client
                             .from('reminders')
                             .select('*')
-                            .eq('sent', false)
-                            .lte('remind_at', now);
+                            .eq('is_active', true);
 
                         if (error) throw error;
 
-                        for (const reminder of dueReminders) {
-                            console.log(`Sending reminder to ${reminder.user_id}`);
-                            await this.sendReminder(reminder.user_id, reminder.content);
+                        for (const reminder of activeReminders) {
+                            const userZone = reminder.timezone || 'UTC';
+                            const nowInZone = DateTime.now().setZone(userZone);
+                            const currentTime = nowInZone.toFormat('HH:mm');
+                            const todayWeekday = nowInZone.weekdayLong;
+                            const todayDate = nowInZone.day;
+                            const todayMonth = nowInZone.month;
 
-                            await client
-                                .from('reminders')
-                                .update({ sent: true })
-                                .eq('id', reminder.id);
+                            let shouldSend = false;
+
+                            switch (reminder.recurrence_type) {
+                                case 'once': {
+                                    if (!reminder.sent && reminder.remind_at && reminder.remind_at <= nowUtc) {
+                                        shouldSend = true;
+                                    }
+                                    break;
+                                }
+
+                                case 'weekly': {
+                                    if (
+                                        reminder.weekdays?.includes(todayWeekday) &&
+                                        reminder.time === currentTime
+                                    ) {
+                                        shouldSend = true;
+                                    }
+                                    break;
+                                }
+
+                                case 'monthly': {
+                                    if (
+                                        reminder.day_of_month === todayDate &&
+                                        reminder.time === currentTime
+                                    ) {
+                                        shouldSend = true;
+                                    }
+                                    break;
+                                }
+
+                                case 'yearly': {
+                                    if (
+                                        reminder.day_of_month === todayDate &&
+                                        reminder.month === todayMonth &&
+                                        reminder.time === currentTime
+                                    ) {
+                                        shouldSend = true;
+                                    }
+                                    break;
+                                }
+                            }
+
+                            if (shouldSend) {
+                                console.log(`📤 Sending reminder to ${reminder.user_id}: ${reminder.message}`);
+                                await this.sendReminder(reminder.user_id, reminder.message);
+
+                                if (reminder.recurrence_type === 'once') {
+                                    await client
+                                        .from('reminders')
+                                        .update({ sent: true })
+                                        .eq('id', reminder.id);
+                                }
+                            }
                         }
+
                     } catch (err) {
                         console.error('Error checking reminders:', err.message);
                     }
